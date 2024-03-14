@@ -113,41 +113,41 @@ def fglm(G, target_ordering):
     Convert a Gröbner basis G with respect to one monomial ordering to a Gröbner
     basis with respect to another monomial ordering using the FGLM algorithm.
     """
-    # Step 2: Initialize an empty set B to store the new Gröbner basis
-    B = []
+    # Initialize an empty set to store the new Gröbner basis
+    G_target = []
 
-    L = sorted(quotient_monomials(G), reverse=True)
-    M = [[0] * len(L) for _ in L]
+    # Initialize the set of standard monomials with the constant monomial 1
+    N_target = [Term(1, (), target_ordering)]
 
-    # Step 5: Compute multiplication matrices
-    for i, m in enumerate(L):
-        for j, x in enumerate(G[0].ordering.vars):
-            # Step 5a: Compute the normal form NF(x_i * m, G)
-            nf = (
-                Polynomial.parse(x, G[0].ordering)
-                * Polynomial((Term(1, m, G[0].ordering),), G[0].ordering)
-            ) % G
+    # Iterate over all monomials in the target ordering
+    # TODO: I removed TermOrdering.monomials because I think it was wrong,
+    # the alternative should maybe involve quotient_monomials when it works
+    for monomial in target_ordering.monomials(
+        G[0].ordering.vars, max(g.degree() for g in G)
+    ):
+        # Compute the normal form of the monomial with respect to the input basis G
+        _, p = monomial.reduce(G)
 
-            # Step 5b: Express NF(x_i * m, G) as a linear combination of monomials in L
-            for term in nf.terms:
-                idx = L.index(term.vars)
-                M[i][idx] = term.coefficient
+        # Extract the coefficients of the normal form with respect to the current set of standard monomials
+        coefficients = [
+            term.coefficient for term in p.terms if term in N_target
+        ]
 
-    # Step 6: Perform linear algebra operations on M to find polynomials in the new Gröbner basis
-    for i in range(len(L)):
-        pivot = M[i][i]
-        if pivot != 0:
-            # Step 6a: Compute the row echelon form of M
-            for j in range(i + 1, len(L)):
-                factor = M[j][i] // pivot
-                for k in range(i, len(L)):
-                    M[j][k] -= factor * M[i][k]
+        # If all coefficients are zero, add the monomial to the set of standard monomials
+        if not any(coefficients):
+            N_target.append(monomial)
+        else:
+            # Construct a new polynomial with leading term equal to the current monomial
+            g = monomial - p
 
-            # Step 6b: Each non-zero row in the row echelon form corresponds to a polynomial in the new Gröbner basis
-            poly_terms = []
-            for j in range(i, len(L)):
-                if M[i][j] != 0:
-                    poly_terms.append(Term(M[i][j], L[j], target_ordering))
-            B.append(Polynomial(tuple(poly_terms), target_ordering))
+            # Add the new polynomial to the Gröbner basis
+            G_target.append(g)
 
-    return B
+            # Elimination test: if the leading monomial is a power of the first variable, terminate
+            if (
+                g.leading_term().vars
+                and g.leading_term().vars[0][0] == target_ordering.vars[0]
+            ):
+                return G_target
+
+    return G_target
